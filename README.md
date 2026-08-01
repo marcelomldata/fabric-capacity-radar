@@ -14,24 +14,33 @@ fixa). Por isso este **não é** um "FinOps de consumo" — a pergunta certa é 
 capacidade: **você está sendo throttled? tem folga? qual item queima CU? deve
 redimensionar o F-SKU?**
 
-## O que o Radar entrega (a interpretação, não o dashboard)
+## O que o Radar entrega
 
 Reproduzir os gráficos do Capacity Metrics App é trabalho perdido — ele já faz isso, de
-graça, melhor. O valor está na **leitura sênior** que o app não conclui:
+graça, melhor. O valor está na **leitura sênior** que o app não conclui.
 
-- **Atribuição causal do throttle** — cruza `System events` com o detalhe do timepoint:
-  *"o throttle das 14:32 foi o refresh do modelo X, não os relatórios."*
-- **Headroom → decisão de F-SKU** — traduz pico/média + rejeições numa recomendação:
-  *"78% de pico com 3 delays/semana; F64 dá ~2× de folga; F32 volta a throttlar em
-  picos de refresh."*
-- **"Pico real" vs "dívida de smoothing"** — `>100%` assusta, mas há dois casos
-  opostos: carryforward **acumulando** (vai throttlar mesmo sem novos jobs → agir) vs.
-  overage **drenando** (benigno). Essa leitura é onde quase todo mundo erra.
-- **Throttle por tipo** — distingue *Interactive Delay* (leve, +20s) de *Interactive
-  Rejection* e *Background Rejection* (graves).
+**Vivo na v0.1** (lê de TABELAS do modelo, mais estáveis):
+- **Diagnóstico de throttle por tipo** — distingue *Interactive Delay* (leve, +20s) de
+  *Interactive Rejection* e *Background Rejection* (graves), lido de `System events`. E
+  **não confunde "não li o modelo" com "não há throttle"** — leitura incompleta é dita
+  como tal, nunca como "capacidade folgada".
+- **Ranking de CU por item** (interativo + background) — quem mais queima capacidade.
 
-A camada de interpretação é **pura Python e testada** (`tests/`) — 15 provas cobrem a
-recomendação de SKU, o diagnóstico de throttle e a leitura pico-vs-dívida.
+**Planejado (v0.2 — depende das medidas de utilização %/overage do app):**
+- **Headroom → decisão de F-SKU** (*"78% de pico; F64 dá ~2× de folga"*).
+- **"Pico real" vs "dívida de smoothing"** (carryforward acumulando × drenando).
+- **Atribuição causal do throttle a um item num timepoint** (join temporal evento×item).
+
+Por que a v0.2 não veio junto: as MEDIDAS de utilização/overage do Capacity Metrics App
+**não têm nome público estável** (a Microsoft declara o modelo "não suportado para
+consumo externo"). Fabricar um `pico = 0` a partir de dado ausente faria a ferramenta
+recomendar *"diminua a SKU"* — o pior erro num assessment de dimensionamento. Então a
+v0.1 **suspende** essas leituras honestamente (retornam "indefinido / não medido") em vez
+de inventar um número. Ligá-las é confirmar os nomes reais via `INFO.MEASURES()` no seu
+tenant — trabalho de projeto, não de isca.
+
+A camada de interpretação é **pura Python e testada** (`tests/`, 15 provas), incluindo o
+caminho de **dado ausente** (garante que ausência nunca vira recomendação).
 
 ## Como funciona
 

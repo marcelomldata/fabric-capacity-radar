@@ -14,13 +14,12 @@ import os
 CAPACITY_ID = os.getenv("FABRIC_CAPACITY_ID")           # GUID da capacidade
 WORKSPACE = os.getenv("FABRIC_METRICS_WORKSPACE")        # workspace do Capacity Metrics App
 SKU = os.getenv("FABRIC_SKU")                            # ex.: F64 (p/ recomendação de dimensionamento)
-DIA = os.getenv("FABRIC_DIA", "")                        # opcional
 
 if not CAPACITY_ID:
     raise ValueError("Defina FABRIC_CAPACITY_ID (o GUID da capacidade). Liste com "
                      "`import sempy.fabric as fabric; fabric.list_capacities()`.")
 
-r = radar(CAPACITY_ID, DIA, workspace=WORKSPACE, sku=SKU)
+r = radar(CAPACITY_ID, workspace=WORKSPACE, sku=SKU)
 
 print(f"Modelo: {r['modelo']}")
 esq = r["schema"]
@@ -43,7 +42,10 @@ if d["top_itens_cu"]:
 for a in r["avisos"]:
     print(f"  ⚠ {a}")
 
-print("\nNOTA: o custo NÃO é o eixo — Fabric é capacidade de preço fixo. Este é um "
-      "assessment de CAPACIDADE/throttling. As medidas de utilização %/overage do app "
-      "não têm nome público estável; se vierem zeradas, confirme com "
-      "`fabric.evaluate_dax(dataset, 'EVALUATE INFO.MEASURES()')` e ajuste o coletor.")
+print("\nNOTA (v0.1): o custo NÃO é o eixo — Fabric é capacidade de preço fixo; isto é "
+      "assessment de CAPACIDADE/throttling. A v0.1 entrega o DIAGNÓSTICO DE THROTTLE "
+      "(eventos) e o RANKING DE CU por item (interativo+background). A recomendação de "
+      "F-SKU e a leitura pico-vs-dívida ficam 'indefinido' de propósito: dependem das "
+      "medidas de utilização %/overage, cujos nomes o app não mantém estáveis. Para "
+      "ligá-las (v0.2): rode `fabric.evaluate_dax(dataset, 'EVALUATE INFO.MEASURES()')` "
+      "no SEU Fabric, ache os nomes reais das medidas e preencha `pico_util_pct`/`overage`.")

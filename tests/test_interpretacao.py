@@ -4,7 +4,8 @@ throttle e a leitura pico-vs-dívida. Rode: python -m pytest -q  (ou este arquiv
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from capacity_radar.radar import (
-    sku_atual_cu, recomendar_sku, diagnosticar_throttle, classificar_pico_vs_divida)
+    sku_atual_cu, recomendar_sku, diagnosticar_throttle, classificar_pico_vs_divida,
+    diagnosticar)
 
 ok = 0
 def t(nome, cond):
@@ -42,5 +43,28 @@ t("sem eventos -> sem throttle", diagnosticar_throttle([])["houve_throttle"] is 
 t("divida crescendo", classificar_pico_vs_divida(30, 10, 120)["tipo"] == "divida_crescendo")
 t("divida drenando", classificar_pico_vs_divida(10, 30, 120)["tipo"] == "divida_drenando")
 t("sem divida", classificar_pico_vs_divida(0, 0, 0)["tipo"] == "sem_divida")
+
+# ── Caminho de DADO AUSENTE (o perigo que o skeptic pegou) ──────────────────
+t("pico None -> indefinido (nunca 'descer' sem medir)",
+  recomendar_sku(64, None, houve_rejeicao=False)["acao"] == "indefinido")
+t("util_medido False -> indefinido",
+  recomendar_sku(64, 20, houve_rejeicao=False, util_medido=False)["acao"] == "indefinido")
+t("overage None -> nao_medido", classificar_pico_vs_divida(None, None, None)["tipo"] == "nao_medido")
+
+# diagnosticar com coleta VAZIA (modelo ilegível): NÃO pode dizer 'sem throttle' nem 'descer'
+_vazio = diagnosticar({"sku": "F64", "pico_util_pct": None, "util_medido": False,
+                       "overage": None, "eventos": [], "top_itens": [],
+                       "coletado": {"eventos": False, "top_itens": False}})
+t("coleta vazia -> throttle INCONCLUSIVO (nao 'sem throttle')",
+  _vazio["throttle"]["houve_throttle"] is None and "INCOMPLETA" in _vazio["throttle"]["resumo"])
+t("coleta vazia -> recomendacao SKU indefinida (nao 'descer')",
+  _vazio["recomendacao_sku"]["acao"] == "indefinido")
+
+# diagnosticar com eventos LIDOS e sem throttle: aí SIM pode dizer 'sem throttle'
+_ok = diagnosticar({"sku": "F64", "pico_util_pct": None, "util_medido": False,
+                    "overage": None, "eventos": [], "top_itens": [],
+                    "coletado": {"eventos": True, "top_itens": True}})
+t("eventos lidos e vazios -> 'sem throttle' (legitimo)",
+  _ok["throttle"]["houve_throttle"] is False)
 
 print(f"\n  {ok} provas passaram.\n")
