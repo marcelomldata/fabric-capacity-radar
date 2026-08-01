@@ -24,9 +24,13 @@ r = radar(CAPACITY_ID, workspace=WORKSPACE, sku=SKU)
 
 print(f"Modelo: {r['modelo']}")
 esq = r["schema"]
-if esq.get("ausentes"):
-    print(f"⚠ Tabelas esperadas AUSENTES (modelo pode ter mudado de versão): {esq['ausentes']}")
-    print(f"  Tabelas presentes: {esq.get('todas', [])[:15]}")
+if esq.get("incompativel"):
+    print(f"\n🛑 VERSÃO INCOMPATÍVEL — faltam tabelas essenciais: {esq['incompativel']}. "
+          "O modelo do Capacity Metrics App mudou de versão. Rode "
+          "`fabric.evaluate_dax(dataset, 'EVALUATE INFO.TABLES()')` e ajuste os nomes antes "
+          "de confiar no resultado abaixo.")
+elif esq.get("ausentes"):
+    print(f"⚠ Tabelas opcionais ausentes: {esq['ausentes']}")
 
 d = r["diagnostico"]
 print("\n── DIAGNÓSTICO DE CAPACIDADE ──")

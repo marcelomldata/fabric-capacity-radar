@@ -3,8 +3,10 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Assessment de **capacidade e throttling** do Microsoft Fabric. O app nativo *Capacity
-Metrics* responde **"quanto"**; o Radar responde **"por causa de quê, quão perto do
-limite, e o que fazer"**.
+Metrics* responde **"quanto"**; o Radar responde **"houve throttle, por causa de qual
+item, e o que fazer"** — com um gate de cronicidade que separa pico isolado de problema
+crônico. *(A leitura de "quanta folga tenho" — utilização média da janela — é a próxima
+frente; ver Limites.)*
 
 ## Por que capacidade, e não "custo"
 
@@ -24,24 +26,28 @@ versionadas do app:
 - **Atribuição causal do throttle** *(o que o app NÃO faz)* — no timepoint de cada evento
   de throttle, QUAL item queimou CU, ranqueado por `[Timepoint CU (s)]` (a parcela
   suavizada que aterrissou ali — não por hora de início, que confunde causa com vítima).
-- **Utilização % e overage exatos** — `Σ [Timepoint CU (s)] / (F × 30) × 100` no timepoint
-  (capacidade de um timepoint de 30 s = F×30 CU-s; fórmula validada contra a doc). Overage
-  = `MAX(0, ΣTimepointCU − F×30)`, o pico real acima de 100%.
+- **Utilização % e overage do timepoint (estimados)** — `Σ [Timepoint CU (s)] / (F × 30) × 100`
+  sobre TODOS os itens no timepoint (capacidade do timepoint de 30 s = F×30 CU-s; fórmula
+  validada contra a doc). ⚠ util%>100% num timepoint **não é throttle** (throttle = esgotar
+  capacidade de janela, vem de System events); e ainda não filtra *billable*.
 - **Diagnóstico de throttle por tipo** — de `System events` (verdade-fundamento,
   event-sourced): *Interactive Delay* (leve, +20s) × *Interactive/Background Rejection*
-  (graves). E **não confunde "não li o modelo" com "não há throttle"**.
-- **Recomendação de F-SKU dirigida pelos EVENTOS** — rejeições → subir (com o quanto);
-  só delay → no limite, rebalanceie; sem throttle → saudável. **Nunca** recomenda *descer*
-  a partir de ausência de dado.
+  (graves). Três estados, não dois: "não li o modelo" e "li mas não reconheci os rótulos"
+  viram **inconclusivo**, nunca "não há throttle".
+- **Recomendação de F-SKU com GATE DE CRONICIDADE** — rejeição **crônica** (≥2 dias
+  distintos) → considerar upsize **após** a escada de remédios (rebalancear → load-balance →
+  pause/resume → só então subir SKU); rejeição **isolada** → investigar, **não** "dobre a
+  fatura"; sem throttle → saudável. Nunca recomenda *descer* sem utilização de janela.
 
 **Limites honestos, declarados** (é o que faz a ferramenta crível a um sênior):
 
-- A recomendação de **DOWNSIZE** exige a utilização média da JANELA (não só nos timepoints
-  de throttle) — é a próxima frente; sem esse dado o Radar não sugere diminuir SKU.
+- **"Quanta folga tenho?" e o DOWNSIZE** exigem a utilização média da JANELA (p50/p95, não só
+  nos timepoints de throttle). É a próxima frente — depende de introspecção do modelo no seu
+  Fabric; sem esse dado o Radar não afirma folga nem sugere diminuir SKU.
 - **Não** prometemos paridade numérica com `Add%/Burndown%/Cumulative%` do app (pools
-  interativo/background separados, billable-only, surge/autoscale, borda de janela). O que
-  entregamos é exato (util% e overage por timepoint) ou event-sourced (o *quando* do
-  throttle) — carryforward reconstruído, se usado, é rotulado como estimativa.
+  interativo/background separados, *billable-only*, surge/autoscale, borda de janela).
+- **Alinhamento de timepoint e fuso** entre `System events` e as tabelas de detalhe: a
+  ferramenta faz *floor* ao bucket de 30 s, mas assume mesmo fuso — **validar no seu Fabric**.
 - O semantic model do app é "não suportado / versionado" — a ferramenta **descobre e valida
   os nomes em runtime** (`INFO.TABLES()`), com fallback claro; nunca hardcoda cego.
 

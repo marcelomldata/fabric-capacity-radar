@@ -6,7 +6,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from capacity_radar.radar import (
     sku_atual_cu, diagnosticar_throttle, recomendar_sku,
-    utilizacao_pct, overage_cu, diagnosticar)
+    utilizacao_pct, overage_cu, diagnosticar, _timepoint_dax)
 
 ok = 0
 def t(nome, cond):
@@ -39,19 +39,38 @@ t("lida e vazia -> False (legitimo)", diagnosticar_throttle([])["houve_throttle"
 t("NAO lida -> None (inconclusivo, nunca 'sem throttle')",
   diagnosticar_throttle([], eventos_lidos=False)["houve_throttle"] is None)
 
-# ── recomendar_sku é EVENT-DRIVEN (não fabrica utilização) ──
-thr_rej = {"houve_throttle": True, "rejeicao": True, "por_tipo": {"InteractiveRejected": 3}}
-r = recomendar_sku(32, thr_rej)
-t("rejeicao -> subir p/ F64", r["acao"] == "subir" and r["sku_sugerida"] == "F64")
-thr_delay = {"houve_throttle": True, "rejeicao": False, "por_tipo": {"InteractiveDelay": 2}}
+# ── diagnosticar_throttle: cronicidade + estados irreconhecíveis ──
+d_unk = diagnosticar_throttle([{"estado": "Weird/NovoEstado", "quando": "2026-08-01 10:00:00"}])
+t("estados irreconheciveis (mas ha linhas) -> inconclusivo, NAO 'saudavel'",
+  d_unk["houve_throttle"] is None)
+d_cron = diagnosticar_throttle([
+  {"estado": "Overloaded/InteractiveRejected", "quando": "2026-07-30 10:00:00"},
+  {"estado": "Overloaded/InteractiveRejected", "quando": "2026-07-31 11:00:00"}])
+t("rejeicao em 2 dias -> dias_rejeicao=2", d_cron["dias_rejeicao"] == 2)
+
+# ── recomendar_sku: EVENT-DRIVEN + GATE DE CRONICIDADE ──
+thr_cronico = {"houve_throttle": True, "rejeicao": True, "por_tipo": {"InteractiveRejected": 5}, "dias_rejeicao": 3}
+r = recomendar_sku(32, thr_cronico)
+t("rejeicao CRONICA (3 dias) -> subir p/ F64", r["acao"] == "subir" and r["sku_sugerida"] == "F64")
+thr_isolada = {"houve_throttle": True, "rejeicao": True, "por_tipo": {"InteractiveRejected": 1}, "dias_rejeicao": 1}
+r = recomendar_sku(32, thr_isolada)
+t("rejeicao ISOLADA (1 dia) -> investigar, NAO 'dobre a fatura'",
+  r["acao"] == "investigar" and r["sku_sugerida"] == "F32")
+thr_delay = {"houve_throttle": True, "rejeicao": False, "por_tipo": {"InteractiveDelay": 2}, "dias_rejeicao": 0}
 t("so delay -> atencao, mantem SKU", recomendar_sku(32, thr_delay)["acao"] == "atencao")
-thr_ok = {"houve_throttle": False, "rejeicao": False, "por_tipo": {}}
-r = recomendar_sku(64, thr_ok)
-t("sem throttle -> 'sem_throttle' (NAO 'descer' sem util de janela)", r["acao"] == "sem_throttle")
-thr_none = {"houve_throttle": None, "rejeicao": False, "por_tipo": {}}
+thr_ok = {"houve_throttle": False, "rejeicao": False, "por_tipo": {}, "dias_rejeicao": 0}
+t("sem throttle -> 'sem_throttle' (NAO 'descer' sem util de janela)",
+  recomendar_sku(64, thr_ok)["acao"] == "sem_throttle")
+thr_none = {"houve_throttle": None, "rejeicao": False, "por_tipo": {}, "dias_rejeicao": 0}
 t("leitura incompleta -> indefinido", recomendar_sku(64, thr_none)["acao"] == "indefinido")
-t("SKU desconhecida -> indefinido", recomendar_sku(None, thr_rej)["acao"] == "indefinido")
-t("F2048 rejeicao nao estoura a escada", recomendar_sku(2048, thr_rej)["sku_sugerida"] == "F2048")
+t("SKU desconhecida -> indefinido", recomendar_sku(None, thr_cronico)["acao"] == "indefinido")
+t("F2048 rejeicao cronica nao estoura a escada", recomendar_sku(2048, thr_cronico)["sku_sugerida"] == "F2048")
+
+# ── _timepoint_dax: FLOOR ao bucket de 30s (o skeptic apontou sem teste) ──
+t("floor :47 -> :30", _timepoint_dax("2026-08-01 14:32:47") == "( DATE(2026,8,1) + TIME(14,32,30) )")
+t("floor :12 -> :00 (com T e fracao/tz)",
+  _timepoint_dax("2026-08-01T14:32:12.500+00:00") == "( DATE(2026,8,1) + TIME(14,32,0) )")
+t("data invalida -> None", _timepoint_dax("ontem de manha") is None)
 
 # ── diagnosticar: coleta VAZIA (modelo ilegível) nunca engana ──
 _vazio = diagnosticar({"sku": "F64", "eventos": [], "causas": [],
