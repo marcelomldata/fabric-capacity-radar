@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fabric-capacity-radar"
+version = "0.1.0"
+description = "Assessment de capacidade e throttling do Microsoft Fabric — interpretação sênior sobre o Capacity Metrics App"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "ML Data e IA", email = "marcelo@mldata.com.br" }]
+keywords = ["microsoft-fabric", "capacity", "throttling", "capacity-units", "finops", "sempy"]
+
+[project.urls]
+Homepage = "https://github.com/marcelomldata/fabric-capacity-radar"
+Issues = "https://github.com/marcelomldata/fabric-capacity-radar/issues"
+
+# SemPy (semantic-link) já vem no runtime do Fabric; não é dependência de instalação
+# aqui (a ferramenta roda dentro de um notebook Fabric). Este pyproject torna o pacote
+# `capacity_radar` importável (pip install -e .).
+[tool.setuptools.packages.find]
+include = ["capacity_radar*"]
