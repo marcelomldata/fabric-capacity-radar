@@ -1,11 +1,12 @@
 """Testes da camada de INTERPRETAÇÃO (pura Python — o diferencial do Radar).
-Não precisa de Fabric: prova a lógica de recomendação de SKU, diagnóstico de
-throttle e a leitura pico-vs-dívida. Rode: python -m pytest -q  (ou este arquivo)."""
+Não precisa de Fabric: prova a recomendação event-driven de SKU, o diagnóstico de
+throttle (incl. 'não li' × 'sem throttle'), e as fórmulas exatas util%/overage.
+Rode: python tests/test_interpretacao.py"""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from capacity_radar.radar import (
-    sku_atual_cu, recomendar_sku, diagnosticar_throttle, classificar_pico_vs_divida,
-    diagnosticar)
+    sku_atual_cu, diagnosticar_throttle, recomendar_sku,
+    utilizacao_pct, overage_cu, diagnosticar)
 
 ok = 0
 def t(nome, cond):
@@ -13,58 +14,55 @@ def t(nome, cond):
     assert cond, f"FALHOU: {nome}"
     print("  ok:", nome); ok += 1
 
-# sku_atual_cu
+# ── sku_atual_cu ──
 t("F64 -> 64", sku_atual_cu("F64") == 64)
-t("f32 minusculo -> 32", sku_atual_cu("f32") == 32)
+t("f32 -> 32", sku_atual_cu("f32") == 32)
 t("invalido -> None", sku_atual_cu("Premium") is None)
+t("None -> None", sku_atual_cu(None) is None)
 
-# recomendar_sku
-r = recomendar_sku(32, 105, houve_rejeicao=True)
-t("pico>100 + rejeicao -> subir p/ F64", r["acao"] == "subir" and r["sku_sugerida"] == "F64")
-r = recomendar_sku(32, 88, houve_rejeicao=False)
-t("pico 88% -> atencao, mantem SKU", r["acao"] == "atencao" and r["sku_sugerida"] == "F32")
-r = recomendar_sku(64, 30, houve_rejeicao=False)
-t("pico 30% -> descer p/ F32", r["acao"] == "descer" and r["sku_sugerida"] == "F32")
-r = recomendar_sku(16, 60, houve_rejeicao=False)
-t("pico 60% -> manter", r["acao"] == "manter")
-r = recomendar_sku(2, 20, houve_rejeicao=False)
-t("F2 pico baixo nao desce abaixo de F2", r["acao"] in ("descer", "manter") and r["sku_sugerida"] is not None)
+# ── utilizacao_pct e overage (fórmula validada: cap do timepoint = F×30 CU-s) ──
+t("F2 cap=60, cu=90 -> 150%", utilizacao_pct(90, 2) == 150.0)
+t("F2 cu=30 -> 50%", utilizacao_pct(30, 2) == 50.0)
+t("sem F -> None", utilizacao_pct(90, None) is None)
+t("overage F2 cu=90 -> 30", overage_cu(90, 2) == 30.0)
+t("overage F2 cu=30 -> 0 (nao negativo)", overage_cu(30, 2) == 0.0)
+t("overage sem F -> None", overage_cu(90, None) is None)
 
-# diagnosticar_throttle
+# ── diagnosticar_throttle: 'não li' × 'li e é 0' ──
 d = diagnosticar_throttle([{"estado": "Overloaded/InteractiveRejected"},
                            {"estado": "Overloaded/InteractiveDelay"},
                            {"estado": "Active/NotOverloaded"}])
 t("rejeicao detectada", d["houve_throttle"] and d["rejeicao"] is True)
 t("delay contado", d["por_tipo"].get("InteractiveDelay") == 1)
 t("estado benigno ignorado", "NotOverloaded" not in d["por_tipo"])
-t("sem eventos -> sem throttle", diagnosticar_throttle([])["houve_throttle"] is False)
+t("lida e vazia -> False (legitimo)", diagnosticar_throttle([])["houve_throttle"] is False)
+t("NAO lida -> None (inconclusivo, nunca 'sem throttle')",
+  diagnosticar_throttle([], eventos_lidos=False)["houve_throttle"] is None)
 
-# classificar_pico_vs_divida
-t("divida crescendo", classificar_pico_vs_divida(30, 10, 120)["tipo"] == "divida_crescendo")
-t("divida drenando", classificar_pico_vs_divida(10, 30, 120)["tipo"] == "divida_drenando")
-t("sem divida", classificar_pico_vs_divida(0, 0, 0)["tipo"] == "sem_divida")
+# ── recomendar_sku é EVENT-DRIVEN (não fabrica utilização) ──
+thr_rej = {"houve_throttle": True, "rejeicao": True, "por_tipo": {"InteractiveRejected": 3}}
+r = recomendar_sku(32, thr_rej)
+t("rejeicao -> subir p/ F64", r["acao"] == "subir" and r["sku_sugerida"] == "F64")
+thr_delay = {"houve_throttle": True, "rejeicao": False, "por_tipo": {"InteractiveDelay": 2}}
+t("so delay -> atencao, mantem SKU", recomendar_sku(32, thr_delay)["acao"] == "atencao")
+thr_ok = {"houve_throttle": False, "rejeicao": False, "por_tipo": {}}
+r = recomendar_sku(64, thr_ok)
+t("sem throttle -> 'sem_throttle' (NAO 'descer' sem util de janela)", r["acao"] == "sem_throttle")
+thr_none = {"houve_throttle": None, "rejeicao": False, "por_tipo": {}}
+t("leitura incompleta -> indefinido", recomendar_sku(64, thr_none)["acao"] == "indefinido")
+t("SKU desconhecida -> indefinido", recomendar_sku(None, thr_rej)["acao"] == "indefinido")
+t("F2048 rejeicao nao estoura a escada", recomendar_sku(2048, thr_rej)["sku_sugerida"] == "F2048")
 
-# ── Caminho de DADO AUSENTE (o perigo que o skeptic pegou) ──────────────────
-t("pico None -> indefinido (nunca 'descer' sem medir)",
-  recomendar_sku(64, None, houve_rejeicao=False)["acao"] == "indefinido")
-t("util_medido False -> indefinido",
-  recomendar_sku(64, 20, houve_rejeicao=False, util_medido=False)["acao"] == "indefinido")
-t("overage None -> nao_medido", classificar_pico_vs_divida(None, None, None)["tipo"] == "nao_medido")
-
-# diagnosticar com coleta VAZIA (modelo ilegível): NÃO pode dizer 'sem throttle' nem 'descer'
-_vazio = diagnosticar({"sku": "F64", "pico_util_pct": None, "util_medido": False,
-                       "overage": None, "eventos": [], "top_itens": [],
-                       "coletado": {"eventos": False, "top_itens": False}})
-t("coleta vazia -> throttle INCONCLUSIVO (nao 'sem throttle')",
-  _vazio["throttle"]["houve_throttle"] is None and "INCOMPLETA" in _vazio["throttle"]["resumo"])
-t("coleta vazia -> recomendacao SKU indefinida (nao 'descer')",
+# ── diagnosticar: coleta VAZIA (modelo ilegível) nunca engana ──
+_vazio = diagnosticar({"sku": "F64", "eventos": [], "causas": [],
+                       "coletado": {"eventos": False, "causas": False}})
+t("coleta vazia -> throttle INCONCLUSIVO", _vazio["throttle"]["houve_throttle"] is None
+  and "INCOMPLETA" in _vazio["throttle"]["resumo"])
+t("coleta vazia -> recomendacao indefinida (nao 'sem_throttle' nem 'descer')",
   _vazio["recomendacao_sku"]["acao"] == "indefinido")
-
-# diagnosticar com eventos LIDOS e sem throttle: aí SIM pode dizer 'sem throttle'
-_ok = diagnosticar({"sku": "F64", "pico_util_pct": None, "util_medido": False,
-                    "overage": None, "eventos": [], "top_itens": [],
-                    "coletado": {"eventos": True, "top_itens": True}})
-t("eventos lidos e vazios -> 'sem throttle' (legitimo)",
-  _ok["throttle"]["houve_throttle"] is False)
+_lido = diagnosticar({"sku": "F64", "eventos": [], "causas": [],
+                      "coletado": {"eventos": True, "causas": False}})
+t("eventos lidos e vazios -> sem_throttle legitimo",
+  _lido["recomendacao_sku"]["acao"] == "sem_throttle")
 
 print(f"\n  {ok} provas passaram.\n")

@@ -17,30 +17,36 @@ redimensionar o F-SKU?**
 ## O que o Radar entrega
 
 Reproduzir os gráficos do Capacity Metrics App é trabalho perdido — ele já faz isso, de
-graça, melhor. O valor está na **leitura sênior** que o app não conclui.
+graça, melhor. O valor está na **leitura sênior** que o app não conclui — e sobre uma
+fundação **estável e ancorada em eventos** (tabelas + `System events`), não nas medidas
+versionadas do app:
 
-**Vivo na v0.1** (lê de TABELAS do modelo, mais estáveis):
-- **Diagnóstico de throttle por tipo** — distingue *Interactive Delay* (leve, +20s) de
-  *Interactive Rejection* e *Background Rejection* (graves), lido de `System events`. E
-  **não confunde "não li o modelo" com "não há throttle"** — leitura incompleta é dita
-  como tal, nunca como "capacidade folgada".
-- **Ranking de CU por item** (interativo + background) — quem mais queima capacidade.
+- **Atribuição causal do throttle** *(o que o app NÃO faz)* — no timepoint de cada evento
+  de throttle, QUAL item queimou CU, ranqueado por `[Timepoint CU (s)]` (a parcela
+  suavizada que aterrissou ali — não por hora de início, que confunde causa com vítima).
+- **Utilização % e overage exatos** — `Σ [Timepoint CU (s)] / (F × 30) × 100` no timepoint
+  (capacidade de um timepoint de 30 s = F×30 CU-s; fórmula validada contra a doc). Overage
+  = `MAX(0, ΣTimepointCU − F×30)`, o pico real acima de 100%.
+- **Diagnóstico de throttle por tipo** — de `System events` (verdade-fundamento,
+  event-sourced): *Interactive Delay* (leve, +20s) × *Interactive/Background Rejection*
+  (graves). E **não confunde "não li o modelo" com "não há throttle"**.
+- **Recomendação de F-SKU dirigida pelos EVENTOS** — rejeições → subir (com o quanto);
+  só delay → no limite, rebalanceie; sem throttle → saudável. **Nunca** recomenda *descer*
+  a partir de ausência de dado.
 
-**Planejado (v0.2 — depende das medidas de utilização %/overage do app):**
-- **Headroom → decisão de F-SKU** (*"78% de pico; F64 dá ~2× de folga"*).
-- **"Pico real" vs "dívida de smoothing"** (carryforward acumulando × drenando).
-- **Atribuição causal do throttle a um item num timepoint** (join temporal evento×item).
+**Limites honestos, declarados** (é o que faz a ferramenta crível a um sênior):
 
-Por que a v0.2 não veio junto: as MEDIDAS de utilização/overage do Capacity Metrics App
-**não têm nome público estável** (a Microsoft declara o modelo "não suportado para
-consumo externo"). Fabricar um `pico = 0` a partir de dado ausente faria a ferramenta
-recomendar *"diminua a SKU"* — o pior erro num assessment de dimensionamento. Então a
-v0.1 **suspende** essas leituras honestamente (retornam "indefinido / não medido") em vez
-de inventar um número. Ligá-las é confirmar os nomes reais via `INFO.MEASURES()` no seu
-tenant — trabalho de projeto, não de isca.
+- A recomendação de **DOWNSIZE** exige a utilização média da JANELA (não só nos timepoints
+  de throttle) — é a próxima frente; sem esse dado o Radar não sugere diminuir SKU.
+- **Não** prometemos paridade numérica com `Add%/Burndown%/Cumulative%` do app (pools
+  interativo/background separados, billable-only, surge/autoscale, borda de janela). O que
+  entregamos é exato (util% e overage por timepoint) ou event-sourced (o *quando* do
+  throttle) — carryforward reconstruído, se usado, é rotulado como estimativa.
+- O semantic model do app é "não suportado / versionado" — a ferramenta **descobre e valida
+  os nomes em runtime** (`INFO.TABLES()`), com fallback claro; nunca hardcoda cego.
 
-A camada de interpretação é **pura Python e testada** (`tests/`, 15 provas), incluindo o
-caminho de **dado ausente** (garante que ausência nunca vira recomendação).
+A interpretação é **pura Python e testada** (`tests/`, 24 provas), incluindo o caminho de
+**dado ausente** — garante que ausência de leitura nunca vira uma recomendação confiante.
 
 ## Como funciona
 
