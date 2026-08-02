@@ -200,7 +200,11 @@ def descobrir_modelo(workspace: Optional[str] = None,
 
 
 def validar_schema(dataset: str, workspace: Optional[str] = None) -> dict:
-    """Quais TABELAS esperadas existem (o modelo é versionado)? {presentes, ausentes}."""
+    """Quais TABELAS esperadas existem (o modelo é versionado)? {presentes, ausentes}.
+
+    Usa `evaluate_dax`, que lê pelo endpoint XMLA (doc oficial SemPy): exige XMLA
+    read-only habilitado na capacidade — read basta, NÃO precisa read-write. Se o XMLA
+    estiver desligado, cai no ramo de erro e reporta todas as tabelas como ausentes."""
     fabric = _sempy()
     try:
         info = fabric.evaluate_dax(dataset=dataset, workspace=workspace,

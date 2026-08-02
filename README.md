@@ -51,13 +51,17 @@ versionadas do app:
 - O semantic model do app é "não suportado / versionado" — a ferramenta **descobre e valida
   os nomes em runtime** (`INFO.TABLES()`), com fallback claro; nunca hardcoda cego.
 
-A interpretação é **pura Python e testada** (`tests/`, 24 provas), incluindo o caminho de
+A interpretação é **pura Python e testada** (`tests/`, 30 provas), incluindo o caminho de
 **dado ausente** — garante que ausência de leitura nunca vira uma recomendação confiante.
 
 ## Como funciona
 
-Roda num **notebook Microsoft Fabric** via **SemPy** (`sempy.fabric.evaluate_dax`, que
-usa REST e é classificado como baixa prioridade — não agrava a capacidade que mede).
+Roda num **notebook Microsoft Fabric** via **SemPy**. A descoberta do modelo usa
+`sempy.fabric.list_datasets(mode="rest")` (REST puro, dispensa XMLA). Já a leitura de
+schema e dados usa `sempy.fabric.evaluate_dax`, que **lê pelo endpoint XMLA** — por isso
+exige o **XMLA read-only habilitado** na capacidade (leitura basta; NÃO precisa
+read-write). As requisições vão como **baixa prioridade / interativas**, para não agravar
+a capacidade que medem ([doc oficial](https://learn.microsoft.com/en-us/fabric/data-science/read-write-power-bi-python#use-python-to-read-data-from-semantic-models)).
 
 > ⚠ O modelo semântico do Capacity Metrics App é **"não suportado para consumo externo"**
 > pela Microsoft e seus nomes de tabela/medida **mudam entre versões**. O Radar é
@@ -79,7 +83,9 @@ export FABRIC_SKU=F64                                # para a recomendação de 
 ```
 
 Pré-requisitos: capacidade Fabric ativa (qualquer SKU, inclusive F2), o **Capacity
-Metrics App** instalado por um **Capacity Admin**.
+Metrics App** instalado por um **Capacity Admin**, e o **endpoint XMLA em read-only
+habilitado** na capacidade (o `evaluate_dax` lê por XMLA; sem isso a leitura de schema
+e dados falha).
 
 ## Precisa agir sobre o diagnóstico?
 

@@ -7,7 +7,9 @@ lê os eventos de throttle (System events) e ATRIBUI a causa no timepoint de cad
 pelos eventos.
 
 Pré-requisitos: capacidade Fabric + Capacity Metrics App instalado (por um Capacity
-Admin) + o workspace do app acessível. SemPy usa REST (não exige XMLA ReadWrite).
+Admin) + o workspace do app acessível. A descoberta do modelo usa REST
+(`list_datasets(mode="rest")`); a leitura de schema/dados usa `evaluate_dax`, que lê por
+XMLA — habilite o **XMLA read-only** na capacidade (read basta; NÃO precisa read-write).
 """
 from capacity_radar.radar import radar
 import os
